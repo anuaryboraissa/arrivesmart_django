@@ -1,10 +1,15 @@
 from django.urls import path
-from .views import ObtainTokenView, CustomTokenRefreshView, SomeSecuredView,UserRegistrationAPIView
+from .views import ObtainTokenView, CustomTokenRefreshView, SomeSecuredView,UserManagementAPIView,BusManagementView,PassengerManagementView,PostManagementView,RouteManagementView,UploadImageApiView,TicketManagementView
 
 urlpatterns = [
     path('login/', ObtainTokenView.as_view(), name='token_obtain_pair'),
-    path('register/', UserRegistrationAPIView.as_view(), name='token_obtain'),
+    path('register/', UserManagementAPIView.as_view(), name='token_obtain'),
     path('token/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
     path('secured/', SomeSecuredView.as_view(), name='secured_view'),
-    # other paths
+    path('passenger/', PassengerManagementView.as_view(), name='passenger_view'),
+    path('upload/', UploadImageApiView.as_view(), name='upload_view'),
+    path('bus/', BusManagementView.as_view(), name='bus_view'),
+    path('ticket/', TicketManagementView.as_view(), name='ticket_view'),
+    path('post/', PostManagementView.as_view(), name='post_view'),
+    path('route/', RouteManagementView.as_view(), name='route_view')
 ]
