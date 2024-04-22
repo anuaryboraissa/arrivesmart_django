@@ -81,4 +81,22 @@ class UploadedImage(models.Model):
     
     def __str__(self):
         return self.image_path
+class UserNotification(models.Model):
+    user_token=models.TextField(blank=False)
+    dev_id=models.CharField(blank=False,null=False,unique=True,primary_key=True,max_length=255)
+    def __str__(self):
+        return self.dev_id
+class UserTicketNotification(models.Model):
+    ticket=models.OneToOneField(Ticket,on_delete=models.CASCADE)
+    doc_id=models.CharField(max_length=50,unique=True,primary_key=True,null=False,blank=False)
+    notification = models.ForeignKey(UserNotification, on_delete=models.CASCADE)
+    def __str__(self):
+        return self.doc_id
+    
+class SentNotification(models.Model):
+    notification_id=models.AutoField(primary_key=True)
+    user_ticket= models.ForeignKey(UserTicketNotification, on_delete=models.CASCADE, null=True)
+    post= models.ForeignKey(Post, on_delete=models.CASCADE, null=True)
+    message=models.TextField(null=True)
+    sent_status=models.BooleanField(default=False)
 # Create your models here.

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import BusOwner,BusManager,User,Passenger,Bus,Route,Ticket,Post,UploadedImage
+from .models import BusOwner,BusManager,User,Passenger,Bus,Route,Ticket,Post,UploadedImage,UserTicketNotification,UserNotification
 import base64
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 class UserSerializer(serializers.ModelSerializer):
@@ -49,6 +49,18 @@ class PostSerializer(serializers.ModelSerializer):
     manager=BusManagerSerializer()
     class Meta:
         model=Post
+        fields="__all__"  
+
+class UserNotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model=UserNotification
+        fields="__all__"  
+
+class UserTicketNotificationSerializer(serializers.ModelSerializer):
+    ticket=TicketSerializer()
+    notification=UserNotificationSerializer()
+    class Meta:
+        model=UserTicketNotification
         fields="__all__"  
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):

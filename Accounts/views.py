@@ -6,11 +6,12 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.views import TokenObtainPairView
-from .serializers import UploadedImageSerializer,TicketSerializer,PassengerSerializer,UserSerializer,PostSerializer,BusOwnerSerializer,BusManagerSerializer,BusSerializer,RouteSerializer
-from .models import User,BusManager,BusOwner,Passenger,Bus,Route,Ticket,Post,UploadedImage
+from .serializers import UploadedImageSerializer,TicketSerializer,PassengerSerializer,UserSerializer,PostSerializer,BusOwnerSerializer,BusManagerSerializer,BusSerializer,RouteSerializer,UserTicketNotificationSerializer,UserNotificationSerializer
+from .models import User,BusManager,BusOwner,Passenger,Bus,Route,Ticket,Post,UploadedImage,UserTicketNotification,UserNotification
 from .permissions import *
 import os,base64,uuid
 from django.conf import settings
+import Accounts.FCMManager as fcm
 # Create your views here.
 from django.core.files.base import ContentFile
 from .serializers import CustomTokenObtainPairSerializer
@@ -61,6 +62,7 @@ class SomeSecuredView(APIView):
                 manager_object=BusManager.objects.get(user__username=user_data.user__username)
                 manager_object.user=user_data
                 manager_object.save()
+                
         
     def delete(self,request):
         user = request.user
@@ -74,13 +76,13 @@ class SomeSecuredView(APIView):
         pass
     def get(self, request):
         user = request.user
-        if user.role=="bus_owner":
+        if user.is_authenticated and user.role=="bus_owner":
             my_managers = request.GET.get('my_managers')
             if my_managers is not None and my_managers:
                 managers=BusManager.objects.filter(works_for__user__email=user.username)
                 serializer=BusManagerSerializer(managers,many=True)
                 return Response({"message":"my managers","data":serializer.data,"status":status.HTTP_200_OK})
-        elif user.role=="bus_manager":
+        elif user.is_authenticated and user.role=="bus_manager":
                     routes = request.GET.get('routes')
                     tickets = request.GET.get('tickets')
                     if routes is not None and routes:
@@ -170,11 +172,14 @@ class PassengerManagementView(APIView):
         serializer=PassengerSerializer(passenger)
         return Response({"message":"success","data":serializer.data,"status":status.HTTP_200_OK})
     def delete(self,request):
-        data=request.data
-        passenger=Passenger.objects.get(phone=data['phone'])
-        passenger.delete()
-        return Response({"message":"success","data":1,"status":status.HTTP_200_OK})
-
+        self.authentication_classes=[IsAuthenticated]
+        user=request.user
+        if user.is_authenticated and user.role=="bus_manager":
+            data=request.data
+            passenger=Passenger.objects.get(passenger_id=data['passenger_id'])
+            i=passenger.delete()
+            return Response({"message":f"success ","data":1,"status":status.HTTP_200_OK})
+        return Response({"message":"Not authorized","data":{},"status":status.HTTP_400_BAD_REQUEST})
 
 class TicketManagementView(APIView):
     def post(self,request):
@@ -231,21 +236,29 @@ class TicketManagementView(APIView):
             del data["plate_number"]
             ticket.objects.update(bus=bus,**data)
         else:
-            ticket.objects.update(**data)
+            ticket.__dict__.update(**data)
+        ticket.save()
         serializer=TicketSerializer(ticket)
         return Response({"message":"success","data":serializer.data,"status":status.HTTP_200_OK})
+    
+    
     def delete(self,request):
+        self.permission_classes=[IsAuthenticated]
         data=request.data
-        ticket=Ticket.objects.get(ticket_id=data['ticket_id'])
-        ticket.delete()
-        return Response({"message":"success","data":1,"status":status.HTTP_200_OK})
+        user = request.user
+        if user.is_authenticated and user.role=="bus_manager":
+            ticket=Ticket.objects.get(ticket_id=data['ticket_id'])
+            ticket.delete()
+            return Response({"message":"success","data":1,"status":status.HTTP_200_OK})
+        return Response({"message":"Not authorized","data":{},"status":status.HTTP_400_BAD_REQUEST})
+
     
 class BusManagementView(APIView):
     permission_classes = [IsAuthenticated]
     def post(self,request):
         user = request.user
         data=request.data
-        if user.role=="bus_manager":
+        if user.is_authenticated and user.role=="bus_manager":
                manager=BusManager.objects.get(user__username=user.username)
                bus=Bus.objects.create(manager=manager,**data)
                serializer=BusSerializer(bus)
@@ -256,7 +269,7 @@ class BusManagementView(APIView):
     def put(self,request):
         user = request.user
         data=request.data
-        if user.role=="bus_manager":
+        if user.is_authenticated and user.role=="bus_manager":
           
             bus=Bus.objects.get(plate_number=data['plate_number'])
             
@@ -268,14 +281,14 @@ class BusManagementView(APIView):
     def delete(self,request):
         user = request.user
         data=request.data
-        if user.role=="bus_manager":
+        if user.is_authenticated and user.role=="bus_manager":
             bus=Bus.objects.get(plate_number=data['plate_number'])
             bus.delete()
             return Response({"message":"success","data":1,"status":status.HTTP_200_OK})
         return Response({"message":"Not authorized","data":{},"status":status.HTTP_400_BAD_REQUEST})
     def get(self,request):
         user = request.user
-        if user.role=="bus_manager":
+        if user.is_authenticated and user.role=="bus_manager":
             buses=Bus.objects.filter(manager__user__username=user.username)
             serializer=BusSerializer(buses,many=True)
             return Response({"message":"success","data":serializer.data,"status":status.HTTP_200_OK})
@@ -285,7 +298,7 @@ class RouteManagementView(APIView):
     def post(self,request):
         user = request.user
         data=request.data
-        if user.role=="bus_manager":
+        if user.is_authenticated and user.role=="bus_manager":
              try:
                  manager=BusManager.objects.get(user__username=user.username)
                  route=Route.objects.create(manager=manager,**data)
@@ -298,7 +311,7 @@ class RouteManagementView(APIView):
            return Response({"message":"Not authorized","data":{},"status":status.HTTP_400_BAD_REQUEST}) 
     def put(self,request):
         user = request.user
-        if user.role=="bus_manager":
+        if user.is_authenticated and user.role=="bus_manager":
              try:
                 data=request.data
                 route=Route.objects.get(route_id=data['route_id'])
@@ -325,7 +338,7 @@ class RouteManagementView(APIView):
         return Response({"message":"success","data":1,"status":status.HTTP_200_OK})
     def get(self,request):
         user = request.user
-        if user.role=="bus_manager":
+        if user.is_authenticated and user.role=="bus_manager":
             routes=Route.objects.filter(manager__user__username=user.username)
             serializer=RouteSerializer(routes,many=True)
             return Response({"message":"success","data":serializer.data,"status":status.HTTP_200_OK})
@@ -335,7 +348,7 @@ class PostManagementView(APIView):
     def post(self,request):
         user = request.user
         data=request.data
-        if user.role=="bus_manager":
+        if user.is_authenticated and user.role=="bus_manager":
              manager=BusManager.objects.get(user__username=user.username)
              data["manager"]=BusManagerSerializer(manager).data
              serializer=PostSerializer(data=data)
@@ -362,8 +375,112 @@ class PostManagementView(APIView):
         posts=Post.objects.filter(manager__user__username=user.username)
         serializer=PostSerializer(posts,many=True)
         return Response({"message":"success","data":serializer.data,"status":status.HTTP_200_OK})
-    
-    
+
+class NotificationApi(APIView):
+    def post(self,request):
+        data=request.data
+        try:
+            serializer = UserNotificationSerializer(data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response({"message":"Notification added success","data":serializer.data,"status":status.HTTP_200_OK})
+            return Response({"message":serializer.errors,"data":None,"status":status.HTTP_400_BAD_REQUEST})
+        except Exception as e:
+             return Response({"message":serializer.errors,"data":None,"status":status.HTTP_400_BAD_REQUEST})
+    def get(self,request):
+        dev_id = request.query_params.get('dev_id')
+        if dev_id is not None:
+            try:
+                notification_obtained = UserNotification.objects.filter(dev_id=dev_id)
+                if notification_obtained.exists():
+                   serializer = UserNotificationSerializer(notification_obtained[0])
+                   return Response({"message":"success","data":serializer.data,"status":status.HTTP_200_OK})
+                return Response({"message":"No Notification Found with that token","data":None,"status":status.HTTP_200_OK})
+            except Exception as e:
+                 return Response({"message":f"something went wrong {e}","data":None,"status":status.HTTP_400_BAD_REQUEST})
+        else:
+            try:
+                notifications=UserNotification.objects.all() 
+                serializer=UserNotificationSerializer(notifications,many=True)
+                return Response({"message":"success","data":serializer.data,"status":status.HTTP_200_OK})
+            except Exception as e:
+                 return Response({"message":"something went wrong","data":None,"status":status.HTTP_400_BAD_REQUEST})
+    def put(self,request):
+        data=request.data
+        if data['dev_id'] is not None:
+            try:
+                notify = UserNotification.objects.get(dev_id=data['dev_id'])
+                notify.__dict__.update(**data)
+                notify.save()
+                serializer = UserNotificationSerializer(notify)
+                return Response({"message":"success","data":serializer.data,"status":status.HTTP_200_OK})
+            except Exception as e:
+                 return Response({"message":"something went wrong","data":None,"status":status.HTTP_400_BAD_REQUEST})
+        else:
+                return Response({"message":"Email is required","data":None,"status":False})
+    def delete(self,request,email=None):
+        data=request.data
+        if data['dev_id'] is not None:
+            try:
+                notify = UserNotification.objects.get(dev_id=data['dev_id'])
+                notify.delete()
+                return Response({"message":"success","data":1,"status":status.HTTP_200_OK})
+            except Exception as e:
+                    return Response({"message":"something went wrong","data":None,"status":status.HTTP_400_BAD_REQUEST})
+        else:
+                return Response({"message":"something went wrong, must provide id","data":None,"status":status.HTTP_400_BAD_REQUEST}) 
+class UserTicketNotificationApi(APIView):
+    def post(self,request):
+        data=request.data
+        try:
+            notification=UserNotification.objects.get(dev_id=data['dev_id'])
+            ticket=Ticket.objects.get(ticket_id=data['ticket_id'])
+            del data['dev_id']
+            del data['ticket_id']
+            UserTicketNotification.objects.create(notification=notification,ticket=ticket,**data)
+            user_ticket=UserTicketNotification.objects.get(doc_id=data['doc_id'])
+            serializer=UserTicketNotificationSerializer(user_ticket)
+            return Response({"message":"Favorite set success","data":serializer.data,"status":True})
+        except Exception as e:
+             return Response({"message":f"something went wrong {e}","data":None,"status":False})
+
+    def get(self,request):
+            doc_id = request.query_params.get('doc_id')
+            if doc_id is not None:
+                try:
+                    college_favorites = UserTicketNotification.objects.filter(doc_id=doc_id)
+                    serializer=UserTicketNotificationSerializer(college_favorites,many=True)
+                    return Response({"message":"college favorites","data":serializer.data,"status":True})
+                except Exception as e:
+                    return Response({"message":f"something went wrong {e}","data":None,"status":False})
+            else:
+              try:
+                notification_tickets = UserTicketNotification.objects.all()
+                serializer=UserTicketNotificationSerializer(notification_tickets,many=True)
+                return Response({"message":"All favorites","data":serializer.data,"status":True})
+              except Exception as e:
+                 return Response({"message":f"something went wrong {e}","data":None,"status":False})
+
+
+    def put(self,request):
+            data=request.data
+            try:
+                notification_ticket=UserTicketNotification.objects.get(doc_id=data['doc_id'])
+                notification_ticket.__dict__.update(**data)
+                notification_ticket.save()
+                favorite_serializer=UserTicketNotificationSerializer(notification_ticket)
+                return Response({"message":"Favorite updated","data":favorite_serializer.data,"status":True})
+            except Exception as e:
+                 return Response({"message":f"something went wrong {e}","data":None,"status":False})
+    def delete(self,request,pk=None):
+            data=request.data
+            try:
+                favorite = UserTicketNotification.objects.get(doc_id=data['doc_id'])
+                favorite.delete()
+                return Response({"message":"success","data":1,"status":True})
+            except Exception as e:
+                    return Response({"message":f"something went wrong {e}","data":None,"status":False}) 
+                
 class UploadImageApiView(APIView):
     def post(self,request):
         input=request.data
